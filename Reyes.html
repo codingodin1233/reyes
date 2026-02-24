@@ -1,0 +1,349 @@
+<!-- index.html
+
+Updated: auto-hide (ghost/blur) controls when playing and idle; automatic landscape-friendly sizing (object-fit: contain).
+Save as `index.html`. Put your video file (or change the <source> src) next to this file.
+-->
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Bayani Player — Mobile Video App</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@300;600;800&display=swap" rel="stylesheet">
+  <style>
+    :root{
+      --bg: #f6efe6; /* cream */
+      --card: #f2e8df;
+      --brown-700: #6b3f2f; /* deep brown */
+      --brown-500: #8f5b44; /* mid */
+      --accent: #d6b89a; /* light brown */
+      --glass: rgba(255,255,255,0.6);
+      --radius: 14px;
+      --safe-w: 360px; /* Xiaomi 13 CSS width */
+      --safe-h: 800px; /* Xiaomi 13 CSS height */
+      --idle-delay: 2200ms; /* how long until controls fade when playing and idle */
+    }
+
+    /* reset */
+    *{box-sizing:border-box}
+    html,body{height:100%;}
+    body{
+      margin:0;
+      font-family: 'Nunito', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+      background: linear-gradient(180deg,var(--bg), #efe8dd);
+      display:flex;align-items:center;justify-content:center;
+      -webkit-font-smoothing:antialiased;
+      -moz-osx-font-smoothing:grayscale;
+      padding:20px;
+    }
+
+    /* App container sized for Xiaomi 13 but flexible on other screens */
+    .device{
+      width:var(--safe-w);
+      height:var(--safe-h);
+      max-width:100vw;
+      max-height:100vh;
+      background:linear-gradient(180deg,var(--card), #f0e6dd);
+      border-radius:20px;
+      box-shadow: 0 12px 30px rgba(0,0,0,0.15);
+      overflow:hidden;
+      display:flex;flex-direction:column;
+      border: 10px solid rgba(107,63,47,0.06);
+      position:relative;
+    }
+
+    header{
+      padding:12px 16px;
+      display:flex;align-items:center;gap:12px;
+      background: linear-gradient(90deg, rgba(107,63,47,0.06), rgba(143,91,68,0.02));
+      z-index:25;
+      transition:opacity 360ms ease, transform 360ms ease, filter 360ms ease;
+      will-change:opacity,transform,filter;
+    }
+    .logo{
+      width:44px;height:44px;border-radius:10px;background:var(--brown-700);display:flex;align-items:center;justify-content:center;color:var(--bg);font-weight:800;font-size:18px;box-shadow:0 4px 8px rgba(0,0,0,0.08);
+    }
+    .brand{font-weight:700;color:var(--brown-700);}
+    .subtitle{font-size:12px;color:#7955488a}
+
+    /* video stage */
+    .stage{flex:1;display:flex;align-items:center;justify-content:center;padding:10px}
+    .player{
+      width:100%;height:100%;background:#000;position:relative;border-radius:12px;overflow:hidden;display:flex;flex-direction:column;
+    }
+    /* contain so landscape videos are shown fully (no cropping) */
+    video{width:100%;height:100%;object-fit:contain;background:#000;display:block}
+
+    /* controls (overlay) */
+    .controls{
+      position:absolute;left:0;right:0;bottom:0;padding:10px;background:linear-gradient(180deg, transparent, rgba(11,7,5,0.45));display:flex;flex-direction:column;gap:8px;
+      transition:opacity 420ms ease, transform 420ms ease, filter 420ms ease;
+      will-change:opacity,transform,filter;
+      z-index:30;
+    }
+    .row{display:flex;align-items:center;gap:8px}
+
+    .progress{
+      -webkit-appearance:none;width:100%;height:6px;border-radius:6px;background:rgba(255,255,255,0.14);outline:none;overflow:hidden;
+      transition:opacity 240ms ease;
+    }
+    .progress::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--accent);box-shadow:0 2px 6px rgba(0,0,0,0.3);margin-top:-4px}
+
+    .btn{
+      display:inline-flex;align-items:center;justify-content:center;padding:8px;border-radius:10px;background:var(--glass);backdrop-filter: blur(4px);border:1px solid rgba(255,255,255,0.2);
+      transition:transform 160ms ease;
+    }
+    .btn.large{width:56px;height:56px}
+    .btn svg{width:20px;height:20px;fill:var(--brown-700)}
+    .btn:active{transform:scale(0.96)}
+
+    .meta{display:flex;align-items:center;justify-content:space-between;color:var(--bg);font-weight:600}
+    .time{font-size:12px;color:#fff}
+
+    /* bottom toolbar outside of player */
+    footer{padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:12px;background:transparent;z-index:22;transition:opacity 360ms ease, transform 360ms ease, filter 360ms ease}
+    .playlist{display:flex;gap:8px;align-items:center}
+    .chip{padding:8px 10px;background:rgba(107,63,47,0.06);border-radius:999px;font-size:13px;color:var(--brown-700);}
+
+    /* Filipino style small accent: subtle woven pattern using pseudo element */
+    .brand-accent{font-size:11px;color:#5a3b2b;opacity:0.9}
+
+    /* IDLE / HIDDEN state (ghost blur + fade) */
+    .device.idle header,
+    .device.idle footer,
+    .device.idle .controls{
+      opacity:0; /* vanish */
+      transform:translateY(6px);
+      filter: blur(6px) saturate(.9);
+      pointer-events:none;
+    }
+
+    /* when idle, still allow visible small hotspot for tapping (optional) */
+    .device.idle .player::after{
+      content:'';position:absolute;left:0;right:0;top:0;bottom:0;z-index:20; /* intercept touches so accidental taps don't trigger controls immediately */
+    }
+
+    /* small screens adjustments */
+    @media (max-width:420px){
+      :root{--radius:12px}
+      .device{border-radius:14px}
+      .logo{width:40px;height:40px}
+    }
+  </style>
+</head>
+<body>
+  <div class="device" id="appDevice" role="application" aria-label="Bayani Video Player">
+    <header>
+      <div class="logo">PNA</div>
+      <div>
+        <div class="brand">Player for National Artists</div>
+        <div class="subtitle"></div>
+      </div>
+      <div style="margin-left:auto;text-align:right">
+        <div class="brand-accent">Filipino National Artist Works</div>
+      </div>
+    </header>
+
+    <section class="stage">
+      <div class="player" id="playerWrap">
+        <!-- Replace sample.mp4 with your video file name -->
+        <video id="video" preload="metadata" playsinline webkit-playsinline>
+          <source src="Josejoya.mp4" type="video/mp4">
+          Your browser does not support HTML5 video.
+        </video>
+
+        <div class="controls" id="controls">
+          <input class="progress" id="progress" type="range" min="0" max="100" value="0" step="0.1" aria-label="video progress">
+
+          <div class="row" style="justify-content:space-between;align-items:center">
+            <div class="row">
+              <button class="btn large" id="playBtn" title="Play/Pause" aria-label="Play/Pause">
+                <!-- play icon -->
+                <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"></path></svg>
+              </button>
+
+              <div style="display:flex;flex-direction:column;align-items:flex-start">
+                <div style="font-weight:700;color:#fff;font-size:14px">Now Playing</div>
+                <div style="font-size:12px;color:rgba(255,255,255,0.85)" id="fileLabel">sample.mp4</div>
+              </div>
+            </div>
+
+            <div class="row">
+              <div class="time" id="currentTime">0:00</div>
+              <button class="btn" id="muteBtn" title="Mute" aria-label="Mute/Unmute">
+                <svg viewBox="0 0 24 24"><path d="M5 9v6h4l5 5V4L9 9H5z"></path></svg>
+              </button>
+              <button class="btn" id="pipBtn" title="Picture in Picture" aria-label="Picture in Picture">PiP</button>
+              <button class="btn" id="fsBtn" title="Fullscreen" aria-label="Fullscreen">
+                <svg viewBox="0 0 24 24"><path d="M7 14H5v5h5v-2H7v-3zm10-9h-3v2h3v3h2V5h-2zM7 5h3V3H5v5h2V5zm10 14v-3h2v5h-5v-2h3z"></path></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <footer>
+      <div class="playlist">
+        <div class="chip">+ Add</div>
+        <div class="chip">Chapters</div>
+        <div class="chip">Share</div>
+      </div>
+      <div style="font-size:12px;color:#6b3f2f;font-weight:700">Enjoy </div>
+    </footer>
+
+  </div>
+
+  <script>
+    (function(){
+      const video = document.getElementById('video');
+      const playBtn = document.getElementById('playBtn');
+      const progress = document.getElementById('progress');
+      const currentTime = document.getElementById('currentTime');
+      const muteBtn = document.getElementById('muteBtn');
+      const pipBtn = document.getElementById('pipBtn');
+      const fsBtn = document.getElementById('fsBtn');
+      const device = document.getElementById('appDevice');
+      const fileLabel = document.getElementById('fileLabel');
+
+      // show full video (no crop) by using object-fit: contain. If you prefer cropping, change to 'cover' in CSS.
+      video.style.objectFit = 'contain';
+
+      function formatTime(s){
+        if (isNaN(s)) return '0:00';
+        const m = Math.floor(s/60);
+        const sec = Math.floor(s%60).toString().padStart(2,'0');
+        return m+':'+sec;
+      }
+
+      video.addEventListener('loadedmetadata', ()=>{
+        progress.max = video.duration || 0;
+        currentTime.textContent = formatTime(video.currentTime) + ' / ' + formatTime(video.duration);
+        // show filename if available
+        try{
+          const src = video.querySelector('source')?.getAttribute('src') || video.currentSrc || 'video';
+          fileLabel.textContent = src.split('/').pop();
+        }catch(e){}
+      });
+
+      video.addEventListener('timeupdate', ()=>{
+        progress.value = video.currentTime;
+        currentTime.textContent = formatTime(video.currentTime) + ' / ' + formatTime(video.duration);
+      });
+
+      playBtn.addEventListener('click', ()=>{
+        if(video.paused) video.play(); else video.pause();
+        updatePlayIcon();
+      });
+
+      video.addEventListener('play', ()=>{
+        updatePlayIcon();
+        startIdleTimer();
+      });
+      video.addEventListener('pause', ()=>{
+        updatePlayIcon();
+        cancelIdleTimer();
+        showUI();
+      });
+
+      video.addEventListener('play', updatePlayIcon);
+      video.addEventListener('pause', updatePlayIcon);
+
+      function updatePlayIcon(){
+        const svg = playBtn.querySelector('svg');
+        if(video.paused){
+          svg.innerHTML = '<path d="M8 5v14l11-7z"></path>';
+        } else {
+          svg.innerHTML = '<path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"></path>';
+        }
+      }
+
+      progress.addEventListener('input', (e)=>{
+        video.currentTime = e.target.value;
+      });
+
+      muteBtn.addEventListener('click', ()=>{
+        video.muted = !video.muted;
+        muteBtn.style.opacity = video.muted ? 0.6 : 1;
+      });
+
+      pipBtn.addEventListener('click', async ()=>{
+        try{
+          if(document.pictureInPictureElement) await document.exitPictureInPicture();
+          else if(video.requestPictureInPicture) await video.requestPictureInPicture();
+        }catch(e){console.warn('PiP not supported',e)}
+      });
+
+      fsBtn.addEventListener('click', ()=>{
+        const wrap = document.getElementById('playerWrap');
+        if(!document.fullscreenElement) wrap.requestFullscreen().catch(()=>{});
+        else document.exitFullscreen();
+      });
+
+      // Double tap to toggle play (mobile friendly)
+      let lastTap = 0;
+      const stage = document.getElementById('playerWrap');
+      stage.addEventListener('touchend', (e)=>{
+        const now = Date.now();
+        if(now - lastTap < 300) { // double tap
+          if(video.paused) video.play(); else video.pause();
+        }
+        lastTap = now;
+      });
+
+      // keyboard shortcuts for desktop testing
+      window.addEventListener('keydown', (e)=>{
+        if(e.key === ' ') { e.preventDefault(); if(video.paused) video.play(); else video.pause(); }
+        if(e.key === 'f') { if(!document.fullscreenElement) stage.requestFullscreen(); else document.exitFullscreen(); }
+        if(e.key === 'm') video.muted = !video.muted;
+      });
+
+      // IDLE / AUTO-HIDE controls logic
+      let hideTimeout = null;
+      const IDLE_DELAY = 2200; // ms - matches --idle-delay
+
+      function startIdleTimer(){
+        cancelIdleTimer();
+        if(video.paused) return;
+        hideTimeout = setTimeout(()=>{
+          device.classList.add('idle');
+        }, IDLE_DELAY);
+      }
+      function cancelIdleTimer(){
+        if(hideTimeout) clearTimeout(hideTimeout);
+        hideTimeout = null;
+      }
+      function showUI(){
+        device.classList.remove('idle');
+      }
+
+      // reset timer on interaction (touch/mouse/keyboard)
+      const resetEvents = ['mousemove','touchstart','touchmove','touchend','click','keydown'];
+      resetEvents.forEach(evt => {
+        document.addEventListener(evt, (e)=>{
+          // ignore events that come from hidden overlay element which blocks touches
+          showUI();
+          startIdleTimer();
+        }, {passive:true});
+      });
+
+      // keep UI visible if paused or video ended
+      video.addEventListener('ended', ()=>{ showUI(); cancelIdleTimer(); });
+
+      // initialize play icon
+      updatePlayIcon();
+
+      // expose a small API for quick tweaks (from console)
+      window.BayaniPlayer = {
+        setIdleDelay(ms){ if(typeof ms === 'number'){ window.IDLE_DELAY = ms; } },
+        setObjectFit(mode){ video.style.objectFit = mode; }
+      };
+
+    })();
+  </script>
+</body>
+</html>
